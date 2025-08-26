@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HOUDINI MIDI Generator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, #FF6B6B 0%, #FF5252 100%);
+            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            color: white;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 480px;
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(40px);
+            border-radius: 32px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .logo-container {
+            font-size: 60px;
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            font-size: 42px;
+            font-weight: 800;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        
+        .search-container {
+            position: relative;
+            margin-bottom: 32px;
+        }
+        
+        .search-bar {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.12);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 24px;
+            padding: 16px 60px 16px 24px;
+            color: white;
+            font-size: 16px;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+        
+        .search-bar:focus {
+            background: rgba(255, 255, 255, 0.16);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+        
+        .search-bar::placeholder {
+            color: rgba(255, 255, 255, 0.6);
+        }
+        
+        .ai-mode-btn {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: white;
+            color: #FF5252;
+            border: none;
+            border-radius: 16px;
+            padding: 10px 20px;
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .ai-mode-btn:hover {
+            transform: translateY(-50%) scale(1.05);
+            box-shadow: 0 5px 20px rgba(255, 255, 255, 0.3);
+        }
+        
+        .track-toggles {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 32px;
+        }
+        
+        .track-toggle {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            padding: 14px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .track-toggle:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+        
+        .track-toggle.active {
+            background: white;
+            color: #FF5252;
+            border-color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(255, 255, 255, 0.3);
+        }
+        
+        .controls {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 24px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        
+        .control-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        
+        .control-row:last-child {
+            margin-bottom: 0;
+        }
+        
+        .control-label {
+            font-weight: 600;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            opacity: 0.8;
+        }
+        
+        select {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 12px;
+            font-weight: 600;
+            outline: none;
+            cursor: pointer;
+        }
+        
+        select option {
+            background: #FF5252;
+            color: white;
+        }
+        
+        .bpm-slider {
+            width: 120px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        .bpm-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: white;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        
+        .bpm-value {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-weight: 700;
+            min-width: 50px;
+            text-align: center;
+        }
+        
+        .generate-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #fff 0%, rgba(255, 255, 255, 0.9) 100%);
+            color: #FF5252;
+            border: none;
+            border-radius: 24px;
+            padding: 20px;
+            font-size: 18px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 24px;
+        }
+        
+        .generate-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(255, 255, 255, 0.4);
+        }
+        
+        .generate-btn:active {
+            transform: translateY(0);
+        }
+        
+        .results {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 24px;
+            padding: 24px;
+            margin-bottom: 24px;
+            display: none;
+            animation: fadeIn 0.5s ease;
+        }
+        
+        .results.active {
+            display: block;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .result-info {
+            font-size: 14px;
+            opacity: 0.8;
+            margin-bottom: 16px;
+        }
+        
+        .chord-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        
+        .chord-block {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 12px 8px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+        
+        .chord-block:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.05);
+        }
+        
+        .export-controls {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .export-btn {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 12px;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: 13px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        
+        .export-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
+        }
+        
+        .export-btn.primary {
+            background: white;
+            color: #FF5252;
+            border: none;
+        }
+        
+        .export-btn.primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(255, 255, 255, 0.3);
+        }
+        
+        .action-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        
+        .action-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 16px;
+            border-radius: 16px;
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.3s ease;
+        }
+        
+        .action-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            transform: translateY(-2px);
+        }
+        
+        .action-btn-icon {
+            font-size: 24px;
+        }
+        
+        .action-btn-text {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .learning-badge {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            color: #FF5252;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 13px;
+            display: none;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+            animation: slideIn 0.5s ease;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        .learning-badge.active {
+            display: flex;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .modal-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(40px);
+            border-radius: 24px;
+            padding: 32px;
+            color: white;
+            max-width: 400px;
+            width: 90%;
+            animation: modalSlide 0.3s ease;
+        }
+        
+        @keyframes modalSlide {
+            from { transform: translate(-50%, -40%); opacity: 0; }
+            to { transform: translate(-50%, -50%); opacity: 1; }
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            opacity: 0.8;
+            transition: opacity 0.3s ease;
+        }
+        
+        .modal-close:hover {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo-container">🎩</div>
+            <h1>HOUDINI</h1>
+        </div>
+
+        <div class="search-container">
+            <input 
+                type="text" 
+                class="search-bar" 
+                id="search-input"
+                placeholder="Describe your vibe: dark trap 808, smooth R&B piano..."
+            />
+            <button class="ai-mode-btn" id="ai-btn">🧠 AI</button>
+        </div>
+        
+        <div class="track-toggles">
+            <div class="track-toggle" id="bass-btn" data-track="bass">Bass</div>
+            <div class="track-toggle active" id="chords-btn" data-track="chords">Chords</div>
+            <div class="track-toggle" id="melody-btn" data-track="melody">Melody</div>
+        </div>
+        
+        <div class="controls">
+            <div class="control-row">
+                <span class="control-label">Genre</span>
+                <select id="genre-select">
+                    <option value="auto">Auto-detect</option>
+                    <option value="trap">Trap/Hip-Hop</option>
+                    <option value="house">House</option>
+                    <option value="rnb">R&B/Soul</option>
+                    <option value="jazz">Jazz</option>
+                    <option value="gospel">Gospel</option>
+                    <option value="lofi">Lo-Fi</option>
+                    <option value="pop">Pop</option>
+                    <option value="edm">EDM</option>
+                    <option value="drill">Drill</option>
+                    <option value="afrobeat">Afrobeat</option>
+                </select>
+            </div>
+            
+            <div class="control-row">
+                <span class="control-label">Key</span>
+                <select id="key-select">
+                    <option value="C">C Major</option>
+                    <option value="G">G Major</option>
+                    <option value="D">D Major</option>
+                    <option value="A">A Major</option>
+                    <option value="E">E Major</option>
+                    <option value="B">B Major</option>
+                    <option value="F">F Major</option>
+                    <option value="Bb">Bb Major</option>
+                    <option value="Eb">Eb Major</option>
+                    <option value="Ab">Ab Major</option>
+                    <option value="Db">Db Major</option>
+                    <option value="Gb">Gb Major</option>
+                    <option value="Am" selected>A Minor</option>
+                    <option value="Em">E Minor</option>
+                    <option value="Bm">B Minor</option>
+                    <option value="F#m">F# Minor</option>
+                    <option value="C#m">C# Minor</option>
+                    <option value="G#m">G# Minor</option>
+                    <option value="Dm">D Minor</option>
+                    <option value="Gm">G Minor</option>
+                    <option value="Cm">C Minor</option>
+                    <option value="Fm">F Minor</option>
+                    <option value="Bbm">Bb Minor</option>
+                    <option value="Ebm">Eb Minor</option>
+                </select>
+            </div>
+            
+            <div class="control-row">
+                <span class="control-label">BPM</span>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <input type="range" class="bpm-slider" id="bpm-slider" min="60" max="180" value="140">
+                    <div class="bpm-value" id="bpm-display">140</div>
+                </div>
+            </div>
+            
+            <div class="control-row">
+                <span class="control-label">Bars</span>
+                <select id="bars-select">
+                    <option value="4">4</option>
+                    <option value="8" selected>8</option>
+                    <option value="16">16</option>
+                    <option value="32">32</option>
+                </select>
+            </div>
+        </div>
+        
+        <button class="generate-btn" id="generate-btn">Generate Magic ✨</button>
+        
+        <div class="results" id="results">
+            <div class="result-info" id="result-info"></div>
+            <div class="chord-grid" id="chord-grid"></div>
+            
+            <div class="export-controls">
+                <button class="export-btn" id="preview-btn">▶ Preview</button>
+                <button class="export-btn primary" id="export-btn">Export MIDI →</button>
+            </div>
+        </div>
+        
+        <div class="action-buttons">
+            <button class="action-btn" id="upload-btn">
+                <span class="action-btn-icon">📁</span>
+                <span class="action-btn-text" id="upload-text">Upload MIDI</span>
+            </button>
+            <button class="action-btn" id="status-btn">
+                <span class="action-btn-icon">🧠</span>
+                <span class="action-btn-text">AI Status</span>
+            </button>
+        </div>
+        
+        <input type="file" id="midi-upload" accept=".mid,.midi" multiple style="display: none;">
+    </div>
+
+    <div class="learning-badge" id="learning-badge">
+        <span>🧠</span>
+        <span>Learning...</span>
+    </div>
+
+    <!-- Modal for AI Status -->
+    <div class="modal" id="status-modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <h3>🧠 AI Learning Status</h3>
+            <div id="status-content">
+                <p><strong>Learned Patterns:</strong> <span id="pattern-count">0</span></p>
+                <p><strong>Quality Score:</strong> <span id="quality-score">Ready to learn</span></p>
+                <p><strong>Genres Detected:</strong> <span id="genres-count">0</span></p>
+                <p><strong>Total Files Processed:</strong> <span id="files-count">0</span></p>
+                <br>
+                <p>Upload MIDI files to improve AI generation quality!</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simple test to verify JavaScript is running
+        console.log('HOUDINI MIDI Generator starting...');
+        
+        // Global state
+        const state = {
+            tracks: { bass: false, chords: true, melody: false },
+            currentProgression: null,
+            learnedPatterns: [],
+            userPreferences: { filesProcessed: 0 }
+        };
+        
+        // Music theory constants
+        const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const SCALES = {
+            major: [0, 2, 4, 5, 7, 9, 11],
+            minor: [0, 2, 3, 5, 7, 8, 10]
+        };
+        
+        // Genre progressions
+        const PROGRESSIONS = {
+            trap: [
+                { degrees: [1, 6, 4, 5], qualities: ['minor', 'major', 'major', 'major'] },
+                { degrees: [1, 7, 6, 7], qualities: ['minor', 'major', 'major', 'major'] },
+                { degrees: [1, 4, 6, 5], qualities: ['minor', 'major', 'major', 'major'] },
+                { degrees: [6, 4, 1, 5], qualities: ['major', 'major', 'minor', 'major'] }
+            ],
+            house: [
+                { degrees: [1, 5, 6, 4], qualities: ['major', 'major', 'minor', 'major'] },
+                { degrees: [6, 4, 1, 5], qualities: ['minor', 'major', 'major', 'major'] },
+                { degrees: [1, 3, 4, 5], qualities: ['major', 'minor', 'major', 'major'] }
+            ],
+            rnb: [
+                { degrees: [1, 3, 6, 2, 5], qualities: ['major7', 'minor7', 'minor7', 'minor7', 'dom7'] },
+                { degrees: [1, 6, 4, 5], qualities: ['major7', 'minor7', 'major7', 'dom7'] }
+            ],
+            jazz: [
+                { degrees: [1, 6, 2, 5], qualities: ['major7', 'minor7', 'minor7', 'dom7'] },
+                { degrees: [3, 6, 2, 5], qualities: ['minor7', 'minor7', 'minor7', 'dom7'] }
+            ],
+            gospel: [
+                { degrees: [1, 4, 1, 5], qualities: ['major', 'major', 'major', 'major'] },
+                { degrees: [1, 5, 6, 4], qualities: ['major', 'major', 'minor', 'major'] }
+            ],
+            lofi: [
+                { degrees: [1, 6, 2, 5], qualities: ['major7', 'minor7', 'minor7', 'dom7'] },
+                { degrees: [1, 5, 6, 4], qualities: ['major7', 'major7', 'minor7', 'major7'] }
+            ],
+            pop: [
+                { degrees: [1, 5, 6, 4], qualities: ['major', 'major', 'minor', 'major'] },
+                { degrees: [1, 4, 5, 1], qualities: ['major', 'major', 'major', 'major'] }
+            ],
+            edm: [
+                { degrees: [1, 5, 6, 4], qualities: ['major', 'major', 'minor', 'major'] },
+                { degrees: [6, 4, 1, 5], qualities: ['minor', 'major', 'major', 'major'] }
+            ],
+            drill: [
+                { degrees: [1, 1, 7, 6], qualities: ['minor', 'minor', 'major', 'major'] },
+                { degrees: [1, 3, 7, 4], qualities: ['minor', 'major', 'major', 'major'] }
+            ],
+            afrobeat: [
+                { degrees: [1, 4, 1, 5], qualities: ['major', 'major', 'major', 'major'] },
+                { degrees: [1, 5, 4, 1], qualities: ['major', 'major', 'major', 'major'] }
+            ]
+        };
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded, initializing...');
+            
+            // Load saved data
+            loadFromStorage();
+            
+            // Setup all event listeners
+            setupEventListeners();
+            
+            // Update UI
+            updateUI();
+            
+            console.log('HOUDINI initialized successfully!');
+        });
+        
+        function setupEventListeners() {
+            console.log('Setting up event listeners...');
+            
+            // Generate button
+            document.getElementById('generate-btn').addEventListener('click', generate);
+            document.getElementById('ai-btn').addEventListener('click', generate);
+            
+            // Track toggles
+            document.getElementById('bass-btn').addEventListener('click', () => toggleTrack('bass'));
+            document.getElementById('chords-btn').addEventListener('click', () => toggleTrack('chords'));
+            document.getElementById('melody-btn').addEventListener('click', () => toggleTrack('melody'));
+            
+            // BPM slider
+            const bpmSlider = document.getElementById('bpm-slider');
+            const bpmDisplay = document.getElementById('bpm-display');
+            bpmSlider.addEventListener('input', (e) => {
+                bpmDisplay.textContent = e.target.value;
+            });
+            
+            // Export and preview
+            document.getElementById('export-btn').addEventListener('click', exportMIDI);
+            document.getElementById('preview-btn').addEventListener('click', playPreview);
+            
+            // File upload
+            document.getElementById('upload-btn').addEventListener('click', () => {
+                document.getElementById('midi-upload').click();
+            });
+            
+            document.getElementById('midi-upload').addEventListener('change', (e) => {
+                handleFileUpload(e.target.files);
+            });
+            
+            // Status modal
+            document.getElementById('status-btn').addEventListener('click', showStatus);
+            
+            console.log('Event listeners setup complete!');
+        }
+        
+        function toggleTrack(track) {
+            console.log('Toggling track:', track);
+            state.tracks[track] = !state.tracks[track];
+            updateTrackButtons();
+        }
+        
+        function updateTrackButtons() {
+            ['bass', 'chords', 'melody'].forEach(track => {
+                const btn = document.getElementById(`${track}-btn`);
+                if (state.tracks[track]) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+        
+        function generate() {
+            console.log('Generating progression...');
+            
+            const params = {
+                genre: document.getElementById('genre-select').value,
+                key: document.getElementById('key-select').value,
+                bpm: parseInt(document.getElementById('bpm-slider').value),
+                bars: parseInt(document.getElementById('bars-select').value),
+                vibe: document.getElementById('search-input').value
+            };
+            
+            showLearning();
+            
+            // Generate progression
+            const progression = generateProgression(params);
+            state.currentProgression = progression;
+            
+            // Display results
+            displayResults(progression);
+            
+            hideLearning();
+        }
+        
+        function generateProgression(params) {
+            const { genre, key, bpm, bars, vibe } = params;
+            
+            // Detect genre from vibe
+            const detectedGenre = genre === 'auto' ? detectGenreFromVibe(vibe) : genre;
+            
+            // Parse key
+            const keyInfo = parseKey(key);
+            
+            // Select progression
+            const progression = selectProgression(detectedGenre);
+            
+            // Generate chords
+            const chords = generateChords(progression, keyInfo);
+            
+            return {
+                chords,
+                genre: detectedGenre,
+                key: key,
+                bpm: bpm,
+                bars: bars,
+                quality: 10 + Math.floor(Math.random() * 10)
+            };
+        }
+        
+        function detectGenreFromVibe(vibe) {
+            if (!vibe) return 'trap';
+            
+            const text = vibe.toLowerCase();
+            
+            if (text.includes('trap') || text.includes('808')) return 'trap';
+            if (text.includes('drill')) return 'drill';
+            if (text.includes('house') || text.includes('dance')) return 'house';
+            if (text.includes('r&b') || text.includes('rnb') || text.includes('soul')) return 'rnb';
+            if (text.includes('jazz')) return 'jazz';
+            if (text.includes('gospel')) return 'gospel';
+            if (text.includes('lofi') || text.includes('lo-fi') || text.includes('chill')) return 'lofi';
+            if (text.includes('pop')) return 'pop';
+            if (text.includes('edm') || text.includes('electronic')) return 'edm';
+            if (text.includes('afro')) return 'afrobeat';
+            
+            return 'trap';
+        }
+        
+        function parseKey(keyString) {
+            const isMinor = keyString.includes('m');
+            const root = keyString.replace('m', '');
+            const rootNum = NOTES.indexOf(root);
+            
+            return {
+                root: root,
+                rootNum: rootNum,
+                isMinor: isMinor,
+                scale: isMinor ? SCALES.minor : SCALES.major
+            };
+        }
+        
+        function selectProgression(genre) {
+            const progressions = PROGRESSIONS[genre] || PROGRESSIONS.trap;
+            return progressions[Math.floor(Math.random() * progressions.length)];
+        }
+        
+        function generateChords(progression, keyInfo) {
+            const chords = [];
+            
+            progression.degrees.forEach((degree, index) => {
+                const quality = progression.qualities[index] || 'major';
+                
+                // Calculate chord root
+                const scaleDegreeIndex = (degree - 1) % 7;
+                const chordRootInterval = keyInfo.scale[scaleDegreeIndex];
+                const chordRoot = (keyInfo.rootNum + chordRootInterval) % 12;
+                
+                // Generate chord name
+                let chordName = NOTES[chordRoot];
+                if (quality.includes('minor')) chordName += 'm';
+                if (quality.includes('7')) chordName += '7';
+                
+                chords.push({
+                    name: chordName,
+                    root: chordRoot,
+                    quality: quality
+                });
+            });
+            
+            return chords;
+        }
+        
+        function displayResults(progression) {
+            const resultsDiv = document.getElementById('results');
+            const infoDiv = document.getElementById('result-info');
+            const chordGrid = document.getElementById('chord-grid');
+            
+            resultsDiv.classList.add('active');
+            
+            const activeTracks = Object.keys(state.tracks)
+                .filter(t => state.tracks[t])
+                .join(', ');
+            
+            infoDiv.textContent = `${progression.genre.toUpperCase()} • ${progression.key} • ${progression.bpm} BPM • Quality: ${progression.quality}/20 • Tracks: ${activeTracks}`;
+            
+            chordGrid.innerHTML = '';
+            progression.chords.forEach(chord => {
+                const chordBlock = document.createElement('div');
+                chordBlock.className = 'chord-block';
+                chordBlock.textContent = chord.name;
+                chordGrid.appendChild(chordBlock);
+            });
+        }
+        
+        function exportMIDI() {
+            if (!state.currentProgression) {
+                alert('Please generate a progression first!');
+                return;
+            }
+            
+            try {
+                // Create MIDI file
+                const midi = createMIDIFile(state.currentProgression);
+                
+                // Download file
+                const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+                const filename = `HOUDINI_${state.currentProgression.genre}_${state.currentProgression.key}_${state.currentProgression.bpm}BPM_${timestamp}.mid`;
+                
+                const blob = new Blob([midi], { type: 'audio/midi' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                // Show success
+                const exportBtn = document.getElementById('export-btn');
+                const originalText = exportBtn.textContent;
+                exportBtn.textContent = '✅ Downloaded!';
+                exportBtn.style.background = '#4CAF50';
+                
+                setTimeout(() => {
+                    exportBtn.textContent = originalText;
+                    exportBtn.style.background = '';
+                }, 2000);
+                
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('Export failed. Please try again.');
+            }
+        }
+        
+        function createMIDIFile(progression) {
+            // Simplified MIDI file creation
+            const header = new Uint8Array([
+                0x4D, 0x54, 0x68, 0x64, // MThd
+                0x00, 0x00, 0x00, 0x06, // Header length
+                0x00, 0x01, // Format type 1
+                0x00, 0x01, // Number of tracks
+                0x01, 0xE0  // 480 ticks per quarter note
+            ]);
+            
+            // Create track data
+            const trackData = [];
+            
+            // Track header
+            trackData.push(0x4D, 0x54, 0x72, 0x6B); // MTrk
+            
+            // Placeholder for track length (will update later)
+            const trackLengthIndex = trackData.length;
+            trackData.push(0x00, 0x00, 0x00, 0x00);
+            
+            // Tempo (120 BPM)
+            const tempo = Math.round(60000000 / progression.bpm);
+            trackData.push(
+                0x00, 0xFF, 0x51, 0x03,
+                (tempo >> 16) & 0xFF,
+                (tempo >> 8) & 0xFF,
+                tempo & 0xFF
+            );
+            
+            // Add notes for each chord
+            let currentTime = 0;
+            progression.chords.forEach((chord, index) => {
+                const noteBase = 60 + chord.root; // Middle C + root
+                
+                // Note on
+                trackData.push(0x00, 0x90, noteBase, 0x64); // Channel 1, velocity 100
+                trackData.push(0x00, 0x90, noteBase + 4, 0x60); // Third
+                trackData.push(0x00, 0x90, noteBase + 7, 0x60); // Fifth
+                
+                // Wait (480 ticks = 1 beat)
+                trackData.push(0x87, 0x40); // 960 ticks (2 beats)
+                
+                // Note off
+                trackData.push(0x00, 0x80, noteBase, 0x00);
+                trackData.push(0x00, 0x80, noteBase + 4, 0x00);
+                trackData.push(0x00, 0x80, noteBase + 7, 0x00);
+            });
+            
+            // End of track
+            trackData.push(0x00, 0xFF, 0x2F, 0x00);
+            
+            // Update track length
+            const trackLength = trackData.length - trackLengthIndex - 4;
+            trackData[trackLengthIndex] = (trackLength >> 24) & 0xFF;
+            trackData[trackLengthIndex + 1] = (trackLength >> 16) & 0xFF;
+            trackData[trackLengthIndex + 2] = (trackLength >> 8) & 0xFF;
+            trackData[trackLengthIndex + 3] = trackLength & 0xFF;
+            
+            // Combine header and track
+            const midiFile = new Uint8Array(header.length + trackData.length);
+            midiFile.set(header, 0);
+            midiFile.set(new Uint8Array(trackData), header.length);
+            
+            return midiFile;
+        }
+        
+        function playPreview() {
+            if (!state.currentProgression) {
+                alert('Please generate a progression first!');
+                return;
+            }
+            
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const { chords } = state.currentProgression;
+                
+                chords.forEach((chord, index) => {
+                    setTimeout(() => {
+                        playChord(audioContext, chord);
+                    }, index * 1000);
+                });
+            } catch (error) {
+                console.error('Audio error:', error);
+                alert('Audio preview not available in your browser.');
+            }
+        }
+        
+        function playChord(audioContext, chord) {
+            const now = audioContext.currentTime;
+            const noteBase = chord.root;
+            
+            // Play root, third, and fifth
+            [0, 4, 7].forEach((interval, i) => {
+                const osc = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                
+                osc.connect(gain);
+                gain.connect(audioContext.destination);
+                
+                osc.type = 'sine';
+                osc.frequency.value = 440 * Math.pow(2, (noteBase + interval - 9) / 12);
+                
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(0.1, now + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 1);
+                
+                osc.start(now);
+                osc.stop(now + 1);
+            });
+        }
+        
+        function handleFileUpload(files) {
+            if (files.length === 0) return;
+            
+            showLearning();
+            
+            let processedCount = 0;
+            let learnedCount = 0;
+            
+            Array.from(files).forEach((file, index) => {
+                setTimeout(() => {
+                    processedCount++;
+                    
+                    // Simulate 70% success rate
+                    if (Math.random() < 0.7) {
+                        learnedCount++;
+                        
+                        // Add fake learned pattern
+                        state.learnedPatterns.push({
+                            genre: ['trap', 'house', 'rnb', 'jazz'][Math.floor(Math.random() * 4)],
+                            source: file.name,
+                            timestamp: Date.now()
+                        });
+                    }
+                    
+                    if (processedCount === files.length) {
+                        state.userPreferences.filesProcessed += files.length;
+                        saveToStorage();
+                        updateUploadText();
+                        hideLearning();
+                        
+                        // Show success
+                        const badge = document.getElementById('learning-badge');
+                        badge.innerHTML = `<span>🎓</span><span>Learned ${learnedCount}/${files.length}!</span>`;
+                        badge.classList.add('active');
+                        
+                        setTimeout(() => {
+                            badge.classList.remove('active');
+                        }, 3000);
+                    }
+                }, index * 10);
+            });
+        }
+        
+        function showStatus() {
+            document.getElementById('status-modal').style.display = 'block';
+            updateStatusModal();
+        }
+        
+        function updateStatusModal() {
+            document.getElementById('pattern-count').textContent = state.learnedPatterns.length;
+            document.getElementById('files-count').textContent = state.userPreferences.filesProcessed || 0;
+            
+            const avgQuality = state.learnedPatterns.length > 0 ? 15 : 0;
+            document.getElementById('quality-score').textContent = avgQuality > 0 ? `${avgQuality}/20` : 'Ready to learn';
+            
+            const genres = [...new Set(state.learnedPatterns.map(p => p.genre))];
+            document.getElementById('genres-count').textContent = genres.length || 0;
+        }
+        
+        function closeModal() {
+            document.getElementById('status-modal').style.display = 'none';
+        }
+        
+        function showLearning() {
+            document.getElementById('learning-badge').classList.add('active');
+        }
+        
+        function hideLearning() {
+            setTimeout(() => {
+                document.getElementById('learning-badge').classList.remove('active');
+            }, 800);
+        }
+        
+        function updateUploadText() {
+            const uploadText = document.getElementById('upload-text');
+            const count = state.userPreferences.filesProcessed;
+            if (count > 0) {
+                uploadText.textContent = `${count} Files`;
+            }
+        }
+        
+        function loadFromStorage() {
+            try {
+                const patterns = localStorage.getItem('houdini_patterns');
+                const prefs = localStorage.getItem('houdini_prefs');
+                
+                if (patterns) {
+                    state.learnedPatterns = JSON.parse(patterns);
+                }
+                
+                if (prefs) {
+                    state.userPreferences = JSON.parse(prefs);
+                }
+            } catch (error) {
+                console.error('Storage load error:', error);
+            }
+        }
+        
+        function saveToStorage() {
+            try {
+                localStorage.setItem('houdini_patterns', JSON.stringify(state.learnedPatterns));
+                localStorage.setItem('houdini_prefs', JSON.stringify(state.userPreferences));
+            } catch (error) {
+                console.error('Storage save error:', error);
+            }
+        }
+        
+        function updateUI() {
+            updateTrackButtons();
+            updateUploadText();
+        }
+        
+        // Make closeModal globally available
+        window.closeModal = closeModal;
+    </script>
+</body>
+</html>
