@@ -1,0 +1,1232 @@
+        // =====================================================
+        // DEFINE ALL GLOBAL FUNCTIONS IMMEDIATELY
+        // =====================================================
+        
+        function toggleTrack(track) {
+            console.log('Toggling track:', track);
+            if (window.engine) {
+                window.engine.tracks[track] = !window.engine.tracks[track];
+                document.getElementById(track + '-btn').classList.toggle('active');
+                console.log('Track states:', window.engine.tracks);
+            } else {
+                console.error('Engine not available for toggleTrack');
+            }
+        }
+        
+        async function generate() {
+            console.log('Generate called');
+            if (!window.engine) {
+                console.error('Engine not initialized');
+                alert('Please wait a moment and try again - the engine is still loading.');
+                return;
+            }
+            
+            const params = {
+                genre: document.getElementById('genre-select').value,
+                key: document.getElementById('key-select').value,
+                bpm: parseInt(document.getElementById('bpm-slider').value),
+                bars: parseInt(document.getElementById('bars-select').value),
+                vibe: document.getElementById('search-input').value || 'neo-soul groove'
+            };
+            
+            console.log('Generation params:', params);
+            console.log('Active tracks:', window.engine.tracks);
+            
+            try {
+                const progression = await window.engine.generateProfessionalProgression(params);
+                displayResults(progression);
+            } catch (error) {
+                console.error('Generation error:', error);
+                alert('Error generating progression. Check console for details.');
+            }
+        }
+        
+        function playPreview() {
+            console.log('Play preview called');
+            if (!window.engine) {
+                console.error('Engine not initialized');
+                alert('Please wait a moment and try again - the engine is still loading.');
+                return;
+            }
+            
+            if (!window.engine.audioCtx) {
+                window.engine.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            
+            const progression = window.engine.currentProgression;
+            if (!progression) {
+                alert('Generate a progression first!');
+                return;
+            }
+            
+            console.log('Playing progression:', progression);
+            
+            // Play chord progression
+            const beatDuration = 60000 / progression.bpm;
+            let currentTime = 0;
+            
+            progression.chords.forEach((chord, index) => {
+                setTimeout(() => {
+                    chord.notes.forEach(note => {
+                        const osc = window.engine.audioCtx.createOscillator();
+                        const gain = window.engine.audioCtx.createGain();
+                        
+                        osc.frequency.value = 440 * Math.pow(2, (note - 69) / 12);
+                        osc.type = 'sine';
+                        gain.gain.value = chord.velocities[0] / 127 * 0.1;
+                        
+                        osc.connect(gain);
+                        gain.connect(window.engine.audioCtx.destination);
+                        
+                        osc.start();
+                        osc.stop(window.engine.audioCtx.currentTime + 0.5);
+                    });
+                }, currentTime);
+                
+                currentTime += beatDuration;
+            });
+        }
+        
+        function exportProfessionalMIDI() {
+            console.log('Export MIDI called');
+            if (!window.engine) {
+                console.error('Engine not initialized');
+                alert('Please wait a moment and try again - the engine is still loading.');
+                return;
+            }
+            
+            const midiData = window.engine.exportToMIDI();
+            if (!midiData) {
+                alert('Generate a progression first!');
+                return;
+            }
+            
+            const blob = new Blob([midiData], { type: 'audio/midi' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            const progression = window.engine.currentProgression;
+            a.href = url;
+            a.download = `HOUDINI_${progression.genre}_${progression.key}_${progression.bpm}BPM_${Date.now()}.mid`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            console.log('MIDI exported successfully');
+        }
+        
+        async function showLearningStatus() {
+            console.log('Show learning status called');
+            if (!window.engine) {
+                console.error('Engine not initialized');
+                alert('Please wait a moment and try again - the engine is still loading.');
+                return;
+            }
+            
+            // Load the latest data
+            if (window.engine.db) {
+                await window.engine.loadPermanentData();
+            }
+            
+            const prefs = window.engine.userPreferences || {};
+            
+            alert(`🧠 AI Learning Status\n\n` +
+                  `Files Learned: ${prefs.uploadCount || 0}\n` +
+                  `Patterns Stored: ${window.engine.learnedPatterns ? window.engine.learnedPatterns.length : 0}\n` +
+                  `Preferred Genre: ${prefs.favoriteGenre || 'Learning...'}\n` +
+                  `Complexity: ${prefs.complexity || 'medium'}\n\n` +
+                  `Upload more MIDI files to improve generation!`);
+        }
+        
+        function displayResults(progression) {
+            if (!progression) return;
+            
+            const info = `${progression.genre.toUpperCase()} • ${progression.key} • ${progression.bpm} BPM • ${progression.bars} bars`;
+            document.getElementById('result-info').textContent = info;
+            
+            const grid = document.getElementById('chord-grid');
+            grid.innerHTML = '';
+            
+            progression.chords.forEach(chord => {
+                const block = document.createElement('div');
+                block.className = 'chord-block';
+                block.textContent = chord.name;
+                grid.appendChild(block);
+            });
+            
+            document.getElementById('results').classList.add('active');
+        }
+        class ProfessionalMIDIEngine {
+            constructor() {
+                this.tracks = { bass: false, chords: true, melody: false };
+                this.currentProgression = null;
+                this.audioCtx = null;
+                
+                // Initialize permanent storage with IndexedDB for larger data
+                this.initializeDatabase();
+                
+                // Musical knowledge base
+                this.musicalKnowledge = this.initializeMusicalKnowledge();
+                
+                // Load learned patterns from permanent storage
+                this.loadPermanentData();
+            }
+            
+            // =====================================================
+            // PERMANENT STORAGE SYSTEM
+            // =====================================================
+            
+            async initializeDatabase() {
+                return new Promise((resolve) => {
+                    const request = indexedDB.open('HoudiniDB', 1);
+                    
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        
+                        if (!db.objectStoreNames.contains('patterns')) {
+                            db.createObjectStore('patterns', { keyPath: 'id', autoIncrement: true });
+                        }
+                        
+                        if (!db.objectStoreNames.contains('preferences')) {
+                            db.createObjectStore('preferences', { keyPath: 'key' });
+                        }
+                        
+                        if (!db.objectStoreNames.contains('midiFiles')) {
+                            db.createObjectStore('midiFiles', { keyPath: 'id', autoIncrement: true });
+                        }
+                    };
+                    
+                    request.onsuccess = (event) => {
+                        this.db = event.target.result;
+                        resolve();
+                    };
+                });
+            }
+            
+            async loadPermanentData() {
+                if (!this.db) await this.initializeDatabase();
+                
+                // Load all learned patterns
+                const transaction = this.db.transaction(['patterns', 'preferences'], 'readonly');
+                const patternStore = transaction.objectStore('patterns');
+                const prefStore = transaction.objectStore('preferences');
+                
+                this.learnedPatterns = await this.getAllFromStore(patternStore);
+                this.userPreferences = await this.getFromStore(prefStore, 'userPrefs') || {
+                    favoriteGenre: null,
+                    complexity: 'medium',
+                    commonProgressions: {},
+                    uploadCount: 0
+                };
+            }
+            
+            async savePattern(pattern) {
+                const transaction = this.db.transaction(['patterns'], 'readwrite');
+                const store = transaction.objectStore('patterns');
+                await store.add(pattern);
+            }
+            
+            async savePreferences() {
+                const transaction = this.db.transaction(['preferences'], 'readwrite');
+                const store = transaction.objectStore('preferences');
+                await store.put({ key: 'userPrefs', ...this.userPreferences });
+            }
+            
+            getAllFromStore(store) {
+                return new Promise((resolve) => {
+                    const request = store.getAll();
+                    request.onsuccess = () => resolve(request.result || []);
+                });
+            }
+            
+            getFromStore(store, key) {
+                return new Promise((resolve) => {
+                    const request = store.get(key);
+                    request.onsuccess = () => resolve(request.result);
+                });
+            }
+            
+            // =====================================================
+            // ADVANCED MUSICAL KNOWLEDGE BASE
+            // =====================================================
+            
+            initializeMusicalKnowledge() {
+                return {
+                    // Professional chord progressions by genre
+                    trap: {
+                        progressions: [
+                            { chords: ['i', 'VI', 'III', 'VII'], name: 'Dark Trap' },
+                            { chords: ['i', 'iv', 'i', 'v'], name: 'Minimal Trap' },
+                            { chords: ['i', 'VII', 'VI', 'VII'], name: 'Modern Trap' },
+                            { chords: ['vi', 'III', 'VII', 'i'], name: 'Melodic Trap' },
+                            { chords: ['i', 'i', 'VI', 'VII'], name: 'Hypnotic Trap' }
+                        ],
+                        bassPattern: 'trap808',
+                        melodyStyle: 'pentatonic-dark',
+                        voicings: 'minimal-dark',
+                        rhythm: { swing: 0, humanize: 10, noteLength: 'staccato' }
+                    },
+                    
+                    house: {
+                        progressions: [
+                            { chords: ['I', 'V', 'vi', 'IV'], name: 'Classic House' },
+                            { chords: ['vi', 'IV', 'I', 'V'], name: 'Deep House' },
+                            { chords: ['I', 'vi', 'ii', 'V'], name: 'Jazz House' },
+                            { chords: ['IVmaj7', 'V7', 'iii7', 'vi'], name: 'Soulful House' },
+                            { chords: ['I', 'I', 'I', 'I'], name: 'Minimal Tech' }
+                        ],
+                        bassPattern: 'fourOnFloor',
+                        melodyStyle: 'gliding-lead',
+                        voicings: 'stacked-bright',
+                        rhythm: { swing: 5, humanize: 5, noteLength: 'sustained' }
+                    },
+                    
+                    rnb: {
+                        progressions: [
+                            { chords: ['Imaj9', 'iii7', 'vi7', 'ii7', 'V7'], name: 'Neo-Soul' },
+                            { chords: ['vi7', 'IV/vi', 'ii7', 'V7', 'Imaj7'], name: 'Modern R&B' },
+                            { chords: ['IVmaj7', 'V7', 'iii7', 'vi7', 'ii7', 'V7'], name: 'Classic Soul' },
+                            { chords: ['Imaj7', 'VII7', 'vi7', 'V7sus4'], name: 'Contemporary R&B' },
+                            { chords: ['ii9', 'V13', 'Imaj7', 'VI7'], name: 'Jazz-Soul' }
+                        ],
+                        bassPattern: 'rnbGroove',
+                        melodyStyle: 'soulful-runs',
+                        voicings: 'extended-jazz',
+                        rhythm: { swing: 15, humanize: 20, noteLength: 'legato' }
+                    },
+                    
+                    jazz: {
+                        progressions: [
+                            { chords: ['IMA7', 'vi7', 'ii7', 'V7'], name: '2-5-1 Major' },
+                            { chords: ['i7', 'ii7b5', 'V7alt', 'i6'], name: '2-5-1 Minor' },
+                            { chords: ['IMA7', 'I7', 'IVmaj7', '#iv°7', 'IMA7'], name: 'Chromatic' },
+                            { chords: ['iii7', 'VI7', 'ii7', 'V7', 'IMA7'], name: 'Turnaround' },
+                            { chords: ['IMA7', 'ii7', 'bIIMA7', 'IMA7'], name: 'Modal Interchange' }
+                        ],
+                        bassPattern: 'walkingBass',
+                        melodyStyle: 'bebop-lines',
+                        voicings: 'rootless-extensions',
+                        rhythm: { swing: 25, humanize: 30, noteLength: 'varied' }
+                    },
+                    
+                    drill: {
+                        progressions: [
+                            { chords: ['i', 'i', 'VII', 'VI'], name: 'UK Drill' },
+                            { chords: ['i', 'bII', 'i', 'VII'], name: 'NY Drill' },
+                            { chords: ['vi', 'VII', 'i', 'III'], name: 'Chicago Drill' },
+                            { chords: ['i', 'iv', 'VII', 'III'], name: 'Dark Drill' }
+                        ],
+                        bassPattern: 'drillSlide',
+                        melodyStyle: 'sliding-dark',
+                        voicings: 'minimal-ominous',
+                        rhythm: { swing: 0, humanize: 8, noteLength: 'sliding' }
+                    }
+                };
+            }
+            
+            // =====================================================
+            // PROFESSIONAL MIDI GENERATION
+            // =====================================================
+            
+            async generateProfessionalProgression(params) {
+                const { genre, key, bpm, bars, vibe } = params;
+                
+                // Get or detect genre
+                const detectedGenre = genre === 'auto' ? this.detectGenreFromVibe(vibe) : genre;
+                
+                // Get genre-specific knowledge
+                const genreKnowledge = this.musicalKnowledge[detectedGenre] || this.musicalKnowledge.trap;
+                
+                // Select progression (with learning influence)
+                let progression = this.selectProgression(genreKnowledge, this.learnedPatterns);
+                
+                // Convert to actual chords in key
+                const chords = this.progressionToChords(progression.chords, key);
+                
+                // Generate bass line if enabled
+                let bassLine = null;
+                if (this.tracks.bass) {
+                    bassLine = this.generateBassLine(chords, genreKnowledge, key, bars, bpm);
+                }
+                
+                // Generate melody if enabled
+                let melody = null;
+                if (this.tracks.melody) {
+                    melody = this.generateMelody(chords, genreKnowledge, key, bars, bpm);
+                }
+                
+                // Apply voicings and humanization
+                const voicedChords = this.applyVoicings(chords, genreKnowledge.voicings);
+                
+                // Store the complete progression
+                this.currentProgression = {
+                    chords: voicedChords,
+                    bass: bassLine,
+                    melody: melody,
+                    genre: detectedGenre,
+                    key: key,
+                    bpm: bpm,
+                    bars: bars,
+                    rhythm: genreKnowledge.rhythm
+                };
+                
+                return this.currentProgression;
+            }
+            
+            detectGenreFromVibe(vibe) {
+                const text = vibe.toLowerCase();
+                
+                // Comprehensive genre detection
+                if (text.includes('trap') || text.includes('808') || text.includes('atlanta')) return 'trap';
+                if (text.includes('drill') || text.includes('uk') || text.includes('ny')) return 'drill';
+                if (text.includes('house') || text.includes('dance') || text.includes('club')) return 'house';
+                if (text.includes('r&b') || text.includes('rnb') || text.includes('soul')) return 'rnb';
+                if (text.includes('jazz') || text.includes('swing') || text.includes('bebop')) return 'jazz';
+                if (text.includes('gospel') || text.includes('church')) return 'gospel';
+                if (text.includes('lofi') || text.includes('chill')) return 'lofi';
+                if (text.includes('pop') || text.includes('radio')) return 'pop';
+                if (text.includes('edm') || text.includes('festival')) return 'edm';
+                if (text.includes('afro') || text.includes('african')) return 'afrobeat';
+                
+                // Default based on BPM
+                const bpm = parseInt(document.getElementById('bpm-slider').value);
+                if (bpm < 100) return 'rnb';
+                if (bpm < 120) return 'lofi';
+                if (bpm < 140) return 'house';
+                return 'trap';
+            }
+            
+            selectProgression(genreKnowledge, learnedPatterns) {
+                // Mix genre progressions with learned patterns
+                if (learnedPatterns && learnedPatterns.length > 3 && Math.random() < 0.4) {
+                    // Use learned pattern
+                    return learnedPatterns[Math.floor(Math.random() * learnedPatterns.length)];
+                }
+                
+                // Use genre-specific progression
+                return genreKnowledge.progressions[
+                    Math.floor(Math.random() * genreKnowledge.progressions.length)
+                ];
+            }
+            
+            progressionToChords(progression, key) {
+                const keyMap = {
+                    'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4,
+                    'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8,
+                    'A': 9, 'A#': 10, 'Bb': 10, 'B': 11
+                };
+                
+                // Determine if minor key
+                const isMinor = key.includes('m');
+                const rootNote = key.replace('m', '');
+                const rootIndex = keyMap[rootNote] || 0;
+                
+                // Scale degrees for major and minor
+                const majorScale = [0, 2, 4, 5, 7, 9, 11];
+                const minorScale = [0, 2, 3, 5, 7, 8, 10];
+                const scale = isMinor ? minorScale : majorScale;
+                
+                return progression.map((degree, index) => {
+                    // Parse Roman numeral
+                    const isLowerCase = degree[0] === degree[0].toLowerCase();
+                    const romanBase = degree.replace(/[^IVXivx]/g, '').toUpperCase();
+                    const extensions = degree.replace(/[IVXivx]+/, '');
+                    
+                    // Convert Roman to number
+                    const degreeMap = {
+                        'I': 0, 'II': 1, 'III': 2, 'IV': 3,
+                        'V': 4, 'VI': 5, 'VII': 6
+                    };
+                    
+                    const scaleDegree = degreeMap[romanBase] || 0;
+                    const chordRoot = (rootIndex + scale[scaleDegree]) % 12;
+                    
+                    // Build chord object with proper structure
+                    const chordObj = {
+                        degree: degree,
+                        root: chordRoot + 60,  // Middle C octave
+                        quality: isLowerCase ? 'minor' : 'major',
+                        extensions: extensions
+                    };
+                    
+                    return chordObj;
+                });
+            }
+            
+            // =====================================================
+            // PROFESSIONAL VOICING SYSTEM
+            // =====================================================
+            
+            applyVoicings(chords, voicingStyle) {
+                return chords.map((chord, index) => {
+                    const voicing = this.getVoicing(chord, voicingStyle);
+                    return {
+                        name: this.getChordName(chord),
+                        notes: voicing.notes,
+                        velocities: voicing.velocities,
+                        timing: voicing.timing
+                    };
+                });
+            }
+            
+            getChordName(chord) {
+                const notes = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+                const rootNote = notes[(chord.root - 60) % 12];
+                let name = rootNote;
+                if (chord.quality === 'minor') name += 'm';
+                name += chord.extensions;
+                return name;
+            }
+            
+            getVoicing(chord, style) {
+                const root = chord.root;
+                const quality = chord.quality;
+                const extensions = chord.extensions;
+                
+                let notes = [];
+                let velocities = [];
+                
+                switch (style) {
+                    case 'minimal-dark':  // Trap voicings
+                        if (quality === 'minor') {
+                            notes = [root, root + 3, root + 7];  // Root, minor 3rd, 5th
+                            velocities = [80, 60, 50];
+                        } else {
+                            notes = [root, root + 4, root + 7];  // Root, major 3rd, 5th
+                            velocities = [80, 60, 50];
+                        }
+                        break;
+                        
+                    case 'extended-jazz':  // R&B voicings
+                        if (extensions.includes('maj9')) {
+                            notes = [root, root + 4, root + 7, root + 11, root + 14];  // 1, 3, 5, 7, 9
+                            velocities = [70, 65, 60, 75, 80];
+                        } else if (extensions.includes('7')) {
+                            if (quality === 'minor') {
+                                notes = [root, root + 3, root + 7, root + 10];  // 1, b3, 5, b7
+                                velocities = [75, 70, 65, 80];
+                            } else {
+                                notes = [root, root + 4, root + 7, root + 10];  // 1, 3, 5, b7
+                                velocities = [75, 70, 65, 80];
+                            }
+                        } else {
+                            if (quality === 'minor') {
+                                notes = [root, root + 3, root + 7, root + 10];  // Minor 7th
+                                velocities = [70, 75, 70, 65];
+                            } else {
+                                notes = [root, root + 4, root + 7, root + 11];  // Major 7th
+                                velocities = [70, 75, 70, 80];
+                            }
+                        }
+                        break;
+                        
+                    case 'rootless-extensions':  // Jazz voicings
+                        if (quality === 'minor' && extensions.includes('7')) {
+                            notes = [root + 3, root + 7, root + 10, root + 14];  // b3, 5, b7, 9
+                            velocities = [75, 65, 80, 70];
+                        } else if (extensions.includes('alt')) {
+                            notes = [root + 4, root + 8, root + 10, root + 15];  // 3, #5, b7, #9
+                            velocities = [80, 75, 85, 70];
+                        } else if (quality === 'minor') {
+                            notes = [root + 3, root + 7, root + 10];  // b3, 5, b7
+                            velocities = [75, 70, 80];
+                        } else {
+                            notes = [root + 4, root + 7, root + 11];  // 3, 5, 7
+                            velocities = [75, 70, 80];
+                        }
+                        break;
+                        
+                    case 'stacked-bright':  // House voicings
+                        if (quality === 'minor') {
+                            notes = [root, root + 3, root + 7, root + 12, root + 15];  // Full stacked minor
+                            velocities = [90, 85, 80, 75, 70];
+                        } else {
+                            notes = [root, root + 4, root + 7, root + 12, root + 16];  // Full stacked major
+                            velocities = [90, 85, 80, 75, 70];
+                        }
+                        break;
+                        
+                    default:  // Standard voicing
+                        if (quality === 'minor') {
+                            notes = [root, root + 3, root + 7];
+                            velocities = [80, 70, 60];
+                        } else {
+                            notes = [root, root + 4, root + 7];
+                            velocities = [80, 70, 60];
+                        }
+                }
+                
+                // Add humanization
+                const timing = notes.map(() => Math.random() * 10 - 5);  // -5 to +5 ms
+                
+                return { notes, velocities, timing };
+            }
+            
+            // =====================================================
+            // BASS LINE GENERATION
+            // =====================================================
+            
+            generateBassLine(chords, genreKnowledge, key, bars, bpm) {
+                const bassNotes = [];
+                const pattern = genreKnowledge.bassPattern;
+                
+                chords.forEach((chord, chordIndex) => {
+                    const root = this.parseChordRoot(chord.name || chord) - 24;  // Bass octave
+                    
+                    switch (pattern) {
+                        case 'trap808':
+                            // Trap 808 pattern with slides
+                            bassNotes.push({
+                                note: root,
+                                time: chordIndex * 960,  // 480 * 2 for half bar
+                                duration: 480,
+                                velocity: 100,
+                                slide: true
+                            });
+                            if (Math.random() > 0.5) {
+                                bassNotes.push({
+                                    note: root - 12,
+                                    time: chordIndex * 960 + 240,
+                                    duration: 240,
+                                    velocity: 80,
+                                    slide: false
+                                });
+                            }
+                            break;
+                            
+                        case 'fourOnFloor':
+                            // House four-on-the-floor
+                            for (let i = 0; i < 4; i++) {
+                                bassNotes.push({
+                                    note: root,
+                                    time: chordIndex * 960 + (i * 240),
+                                    duration: 200,
+                                    velocity: 90
+                                });
+                            }
+                            break;
+                            
+                        case 'walkingBass':
+                            // Jazz walking bass
+                            const scale = this.getScaleNotes(key);
+                            const walkingNotes = this.generateWalkingBassLine(root, scale);
+                            walkingNotes.forEach((note, i) => {
+                                bassNotes.push({
+                                    note: note,
+                                    time: chordIndex * 960 + (i * 240),
+                                    duration: 220,
+                                    velocity: 75 + Math.random() * 10
+                                });
+                            });
+                            break;
+                            
+                        case 'rnbGroove':
+                            // R&B groove bass
+                            bassNotes.push({
+                                note: root,
+                                time: chordIndex * 960,
+                                duration: 360,
+                                velocity: 85
+                            });
+                            bassNotes.push({
+                                note: root + 7,
+                                time: chordIndex * 960 + 480,
+                                duration: 360,
+                                velocity: 75
+                            });
+                            break;
+                            
+                case 'drillSlide':
+                            // Drill sliding bass
+                            bassNotes.push({
+                                note: root,
+                                time: chordIndex * 960,
+                                duration: 720,
+                                velocity: 95,
+                                slide: true,
+                                slideTarget: root - 2
+                            });
+                            break;
+                    }
+                });
+                
+                return bassNotes;
+            }
+            
+            generateWalkingBassLine(root, scale) {
+                // Generate authentic walking bass line
+                const walkingNotes = [root];
+                const intervals = [-2, -1, 1, 2, 3, 4, 5];
+                
+                for (let i = 1; i < 4; i++) {
+                    const lastNote = walkingNotes[i - 1];
+                    const interval = intervals[Math.floor(Math.random() * intervals.length)];
+                    walkingNotes.push(lastNote + interval);
+                }
+                
+                return walkingNotes;
+            }
+            
+            // =====================================================
+            // MELODY GENERATION
+            // =====================================================
+            
+            generateMelody(chords, genreKnowledge, key, bars, bpm) {
+                const melodyNotes = [];
+                const style = genreKnowledge.melodyStyle;
+                const scale = this.getScaleNotes(key);
+                
+                chords.forEach((chord, chordIndex) => {
+                    const chordTones = chord.notes || [60, 64, 67];  // Fallback
+                    
+                    switch (style) {
+                        case 'pentatonic-dark':
+                            // Trap/drill dark melodies
+                            const pentatonic = [0, 3, 5, 7, 10];  // Minor pentatonic
+                            for (let i = 0; i < 4; i++) {
+                                if (Math.random() > 0.3) {
+                                    const scaleIndex = pentatonic[Math.floor(Math.random() * pentatonic.length)];
+                                    melodyNotes.push({
+                                        note: scale[0] + 12 + scaleIndex,
+                                        time: chordIndex * 960 + (i * 240),
+                                        duration: 180,
+                                        velocity: 60 + Math.random() * 20
+                                    });
+                                }
+                            }
+                            break;
+                            
+                        case 'soulful-runs':
+                            // R&B melodic runs
+                            const runLength = Math.floor(Math.random() * 4) + 3;
+                            let currentNote = chordTones[Math.floor(Math.random() * chordTones.length)] + 12;
+                            
+                            for (let i = 0; i < runLength; i++) {
+                                melodyNotes.push({
+                                    note: currentNote,
+                                    time: chordIndex * 960 + (i * 120),
+                                    duration: 100,
+                                    velocity: 70 + Math.random() * 15
+                                });
+                                currentNote += Math.random() > 0.5 ? 2 : -1;
+                            }
+                            break;
+                            
+                        case 'bebop-lines':
+                            // Jazz bebop lines
+                            const bebopScale = [...scale, scale[1] - 1, scale[4] + 1];  // Add chromatic notes
+                            for (let i = 0; i < 8; i++) {
+                                const note = bebopScale[Math.floor(Math.random() * bebopScale.length)] + 12;
+                                melodyNotes.push({
+                                    note: note,
+                                    time: chordIndex * 960 + (i * 120),
+                                    duration: 100,
+                                    velocity: 65 + Math.random() * 20,
+                                    articulation: Math.random() > 0.7 ? 'accent' : 'normal'
+                                });
+                            }
+                            break;
+                            
+                        case 'gliding-lead':
+                            // House gliding lead
+                            const leadNote = chordTones[2] + 24;  // High register
+                            melodyNotes.push({
+                                note: leadNote,
+                                time: chordIndex * 960,
+                                duration: 480,
+                                velocity: 85,
+                                glide: true,
+                                glideTime: 50
+                            });
+                            if (Math.random() > 0.6) {
+                                melodyNotes.push({
+                                    note: leadNote + 3,
+                                    time: chordIndex * 960 + 480,
+                                    duration: 480,
+                                    velocity: 80
+                                });
+                            }
+                            break;
+                    }
+                });
+                
+                return melodyNotes;
+            }
+            
+            getScaleNotes(key) {
+                const keyMap = {
+                    'C': 60, 'C#': 61, 'Db': 61, 'D': 62, 'D#': 63, 'Eb': 63, 'E': 64,
+                    'F': 65, 'F#': 66, 'Gb': 66, 'G': 67, 'G#': 68, 'Ab': 68,
+                    'A': 69, 'A#': 70, 'Bb': 70, 'B': 71
+                };
+                
+                const isMinor = key.includes('m');
+                const rootNote = key.replace('m', '').replace('#', '');
+                const root = keyMap[rootNote] || 60;
+                
+                const majorIntervals = [0, 2, 4, 5, 7, 9, 11];
+                const minorIntervals = [0, 2, 3, 5, 7, 8, 10];
+                const intervals = isMinor ? minorIntervals : majorIntervals;
+                
+                return intervals.map(interval => root + interval);
+            }
+            
+            // =====================================================
+            // PROFESSIONAL MIDI EXPORT
+            // =====================================================
+            
+            exportToMIDI() {
+                if (!this.currentProgression) return null;
+                
+                const prog = this.currentProgression;
+                const ticksPerBeat = 480;
+                
+                // Count active tracks
+                let numTracks = 0;
+                if (this.tracks.chords) numTracks++;
+                if (this.tracks.bass && prog.bass) numTracks++;
+                if (this.tracks.melody && prog.melody) numTracks++;
+                
+                if (numTracks === 0) {
+                    // If no tracks active, at least export chords
+                    numTracks = 1;
+                }
+                
+                // Create MIDI file header
+                const header = this.createMIDIHeader(numTracks);
+                
+                // Create tracks
+                const tracks = [];
+                
+                // Chord track
+                if (this.tracks.chords || numTracks === 1) {
+                    tracks.push(this.createChordTrack(prog.chords, ticksPerBeat));
+                }
+                
+                // Bass track
+                if (this.tracks.bass && prog.bass) {
+                    tracks.push(this.createBassTrack(prog.bass, ticksPerBeat));
+                }
+                
+                // Melody track
+                if (this.tracks.melody && prog.melody) {
+                    tracks.push(this.createMelodyTrack(prog.melody, ticksPerBeat));
+                }
+                
+                // Combine all parts
+                return this.combineMIDIParts(header, tracks);
+            }
+            
+            createMIDIHeader(numTracks) {
+                // MThd header
+                const header = [0x4D, 0x54, 0x68, 0x64];  // "MThd"
+                const headerLength = [0x00, 0x00, 0x00, 0x06];  // 6 bytes
+                const format = [0x00, 0x01];  // Format 1 (multiple tracks)
+                const tracks = [0x00, numTracks];  // Number of tracks
+                const division = [0x01, 0xE0];  // 480 ticks per beat
+                
+                return [...header, ...headerLength, ...format, ...tracks, ...division];
+            }
+            
+            createChordTrack(chords, ticksPerBeat) {
+                const events = [];
+                let currentTime = 0;
+                
+                // Track name
+                events.push(...this.createMetaEvent(0x03, 'Chords'));
+                
+                // Tempo (500000 microseconds = 120 BPM)
+                const tempo = Math.floor(60000000 / this.currentProgression.bpm);
+                events.push(...this.createTempoEvent(tempo));
+                
+                // Program change (Electric Piano)
+                events.push(...this.createProgramChange(0, 4));
+                
+                // Generate chord events
+                chords.forEach((chord, index) => {
+                    const startTime = index * ticksPerBeat * 2;  // 2 beats per chord
+                    const deltaTime = startTime - currentTime;
+                    
+                    // Note on events
+                    chord.notes.forEach((note, i) => {
+                        const velocity = chord.velocities[i] || 80;
+                        const timing = chord.timing ? chord.timing[i] || 0 : 0;
+                        const adjustedTime = i === 0 ? deltaTime : timing;
+                        
+                        events.push(...this.createNoteOn(adjustedTime, 0, note, velocity));
+                    });
+                    
+                    // Note off events
+                    const duration = ticksPerBeat * 2 - 10;  // Slightly shorter for separation
+                    chord.notes.forEach((note, i) => {
+                        const offTime = i === 0 ? duration : 0;
+                        events.push(...this.createNoteOff(offTime, 0, note));
+                    });
+                    
+                    currentTime = startTime + duration;
+                });
+                
+                // End of track
+                events.push(...this.createEndOfTrack());
+                
+                return this.wrapTrackData(events);
+            }
+            
+            createBassTrack(bassNotes, ticksPerBeat) {
+                const events = [];
+                let currentTime = 0;
+                
+                // Track name
+                events.push(...this.createMetaEvent(0x03, 'Bass'));
+                
+                // Program change (Synth Bass)
+                events.push(...this.createProgramChange(1, 38));
+                
+                // Generate bass events
+                bassNotes.forEach(note => {
+                    const deltaTime = note.time - currentTime;
+                    
+                    // Pitch bend for slides
+                    if (note.slide) {
+                        events.push(...this.createPitchBend(deltaTime, 1, 0x2000));  // Center
+                        events.push(...this.createNoteOn(0, 1, note.note, note.velocity));
+                        
+                        // Slide effect
+                        const slideSteps = 10;
+                        const slideTime = Math.floor(note.duration / slideSteps);
+                        const targetBend = note.slideTarget ? 
+                            (note.slideTarget - note.note) * 0x1000 / 12 : -0x1000;
+                        
+                        for (let i = 1; i <= slideSteps; i++) {
+                            const bendValue = 0x2000 + Math.floor(targetBend * i / slideSteps);
+                            events.push(...this.createPitchBend(slideTime, 1, bendValue));
+                        }
+                        
+                        events.push(...this.createNoteOff(0, 1, note.note));
+                        events.push(...this.createPitchBend(0, 1, 0x2000));  // Reset
+                    } else {
+                        events.push(...this.createNoteOn(deltaTime, 1, note.note, note.velocity));
+                        events.push(...this.createNoteOff(note.duration, 1, note.note));
+                    }
+                    
+                    currentTime = note.time + note.duration;
+                });
+                
+                // End of track
+                events.push(...this.createEndOfTrack());
+                
+                return this.wrapTrackData(events);
+            }
+            
+            createMelodyTrack(melodyNotes, ticksPerBeat) {
+                const events = [];
+                let currentTime = 0;
+                
+                // Track name
+                events.push(...this.createMetaEvent(0x03, 'Melody'));
+                
+                // Program change (Lead Synth)
+                events.push(...this.createProgramChange(2, 80));
+                
+                // Generate melody events
+                melodyNotes.forEach(note => {
+                    const deltaTime = note.time - currentTime;
+                    
+                    // Handle glide
+                    if (note.glide) {
+                        events.push(...this.createControlChange(deltaTime, 2, 5, note.glideTime || 50));
+                    }
+                    
+                    // Note events
+                    events.push(...this.createNoteOn(note.glide ? 0 : deltaTime, 2, note.note, note.velocity));
+                    events.push(...this.createNoteOff(note.duration, 2, note.note));
+                    
+                    currentTime = note.time + note.duration;
+                });
+                
+                // End of track
+                events.push(...this.createEndOfTrack());
+                
+                return this.wrapTrackData(events);
+            }
+            
+            // MIDI event creation helpers
+            createMetaEvent(type, text) {
+                const bytes = [...new TextEncoder().encode(text)];
+                return [0x00, 0xFF, type, bytes.length, ...bytes];
+            }
+            
+            createTempoEvent(tempo) {
+                return [0x00, 0xFF, 0x51, 0x03, 
+                    (tempo >> 16) & 0xFF, 
+                    (tempo >> 8) & 0xFF, 
+                    tempo & 0xFF];
+            }
+            
+            createProgramChange(channel, program) {
+                return [0x00, 0xC0 | channel, program];
+            }
+            
+            createNoteOn(deltaTime, channel, note, velocity) {
+                const delta = this.encodeVariableLength(deltaTime);
+                return [...delta, 0x80 | channel, note, 0x00];
+            }
+            
+            createPitchBend(deltaTime, channel, value) {
+                const delta = this.encodeVariableLength(deltaTime);
+                return [...delta, 0xE0 | channel, value & 0x7F, (value >> 7) & 0x7F];
+            }
+            
+            createControlChange(deltaTime, channel, controller, value) {
+                const delta = this.encodeVariableLength(deltaTime);
+                return [...delta, 0xB0 | channel, controller, value];
+            }
+            
+            createEndOfTrack() {
+                return [0x00, 0xFF, 0x2F, 0x00];
+            }
+            
+            encodeVariableLength(value) {
+                const bytes = [];
+                do {
+                    bytes.unshift(value & 0x7F);
+                    value >>= 7;
+                } while (value > 0);
+                
+                bytes.forEach((byte, i) => {
+                    if (i < bytes.length - 1) bytes[i] |= 0x80;
+                });
+                
+                return bytes;
+            }
+            
+            wrapTrackData(events) {
+                const header = [0x4D, 0x54, 0x72, 0x6B];  // "MTrk"
+                const length = events.length;
+                const lengthBytes = [
+                    (length >> 24) & 0xFF,
+                    (length >> 16) & 0xFF,
+                    (length >> 8) & 0xFF,
+                    length & 0xFF
+                ];
+                
+                return [...header, ...lengthBytes, ...events];
+            }
+            
+            combineMIDIParts(header, tracks) {
+                const combined = [...header];
+                tracks.forEach(track => combined.push(...track));
+                return new Uint8Array(combined);
+            }
+            
+            // =====================================================
+            // MIDI LEARNING SYSTEM
+            // =====================================================
+            
+            async learnFromMIDI(file) {
+                const badge = document.getElementById('learning-badge');
+                badge.classList.add('active');
+                
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const midiData = new Uint8Array(arrayBuffer);
+                    
+                    // Parse MIDI file
+                    const parsed = this.parseMIDIFile(midiData);
+                    
+                    // Extract patterns
+                    const patterns = this.extractPatterns(parsed);
+                    
+                    // Store patterns
+                    for (const pattern of patterns) {
+                        await this.savePattern({
+                            ...pattern,
+                            source: file.name,
+                            timestamp: Date.now()
+                        });
+                    }
+                    
+                    // Update preferences
+                    this.userPreferences.uploadCount = (this.userPreferences.uploadCount || 0) + 1;
+                    await this.savePreferences();
+                    
+                    // Reload data
+                    await this.loadPermanentData();
+                    
+                    badge.classList.remove('active');
+                    return true;
+                } catch (error) {
+                    console.error('Error learning from MIDI:', error);
+                    badge.classList.remove('active');
+                    return false;
+                }
+            }
+            
+            parseMIDIFile(data) {
+                // Basic MIDI parser (simplified)
+                const view = new DataView(data.buffer);
+                let offset = 0;
+                
+                // Check header
+                const headerChunk = String.fromCharCode(...data.slice(0, 4));
+                if (headerChunk !== 'MThd') {
+                    throw new Error('Invalid MIDI file');
+                }
+                
+                offset += 8;  // Skip header chunk size
+                const format = view.getUint16(offset);
+                const tracks = view.getUint16(offset + 2);
+                const division = view.getUint16(offset + 4);
+                
+                offset += 6;
+                
+                const parsedTracks = [];
+                
+                // Parse each track
+                for (let i = 0; i < tracks; i++) {
+                    offset += 8;  // Skip track header
+                    const trackLength = view.getUint32(offset - 4);
+                    const trackData = data.slice(offset, offset + trackLength);
+                    
+                    const events = this.parseTrackEvents(trackData);
+                    parsedTracks.push(events);
+                    
+                    offset += trackLength;
+                }
+                
+                return { format, tracks: parsedTracks, division };
+            }
+            
+            parseTrackEvents(trackData) {
+                const events = [];
+                let offset = 0;
+                let runningStatus = null;
+                
+                while (offset < trackData.length) {
+                    // Read delta time
+                    let deltaTime = 0;
+                    let byte;
+                    do {
+                        byte = trackData[offset++];
+                        deltaTime = (deltaTime << 7) | (byte & 0x7F);
+                    } while (byte & 0x80);
+                    
+                    // Read event
+                    let status = trackData[offset];
+                    if (status < 0x80) {
+                        status = runningStatus;
+                    } else {
+                        offset++;
+                        runningStatus = status;
+                    }
+                    
+                    const type = status & 0xF0;
+                    const channel = status & 0x0F;
+                    
+                    if (type === 0x90 || type === 0x80) {  // Note on/off
+                        const note = trackData[offset++];
+                        const velocity = trackData[offset++];
+                        events.push({ deltaTime, type: type === 0x90 ? 'noteOn' : 'noteOff', note, velocity, channel });
+                    } else if (type === 0xFF) {  // Meta event
+                        const metaType = trackData[offset++];
+                        const length = trackData[offset++];
+                        offset += length;
+                        if (metaType === 0x2F) break;  // End of track
+                    } else {
+                        // Skip other events
+                        offset += 2;
+                    }
+                }
+                
+                return events;
+            }
+            
+            extractPatterns(parsed) {
+                const patterns = [];
+                
+                // Extract chord progressions
+                parsed.tracks.forEach(track => {
+                    const chords = [];
+                    let currentChord = [];
+                    let lastTime = 0;
+                    
+                    track.forEach(event => {
+                        if (event.type === 'noteOn' && event.velocity > 0) {
+                            if (event.deltaTime > 100) {  // New chord
+                                if (currentChord.length > 0) {
+                                    chords.push([...currentChord]);
+                                }
+                                currentChord = [event.note];
+                            } else {
+                                currentChord.push(event.note);
+                            }
+                        }
+                    });
+                    
+                    if (currentChord.length > 0) {
+                        chords.push(currentChord);
+                    }
+                    
+                    if (chords.length >= 4) {
+                        patterns.push({
+                            type: 'progression',
+                            chords: chords.slice(0, 8),  // First 8 chords
+                            genre: this.detectGenreFromPattern(chords)
+                        });
+                    }
+                });
+                
+                return patterns;
+            }
+            
+            detectGenreFromPattern(chords) {
+                // Simple genre detection based on chord complexity
+                const avgNotes = chords.reduce((sum, chord) => sum + chord.length, 0) / chords.length;
+                
+                if (avgNotes < 3) return 'trap';
+                if (avgNotes > 4) return 'jazz';
+                return 'rnb';
+            }
+        }
+        
+        // =====================================================
+        // INITIALIZATION
+        // =====================================================
+        
+        // Initialize engine when page loads
+        window.addEventListener('DOMContentLoaded', async () => {
+            console.log('Initializing HOUDINI engine...');
+            window.engine = new ProfessionalMIDIEngine();
+            
+            // Setup BPM slider
+            const bpmSlider = document.getElementById('bpm-slider');
+            const bpmDisplay = document.getElementById('bpm-display');
+            bpmSlider.addEventListener('input', (e) => {
+                bpmDisplay.textContent = e.target.value;
+            });
+            
+            // Setup file upload
+            const fileInput = document.getElementById('midi-upload');
+            fileInput.addEventListener('change', async (e) => {
+                const files = Array.from(e.target.files);
+                let learned = 0;
+                
+                for (const file of files) {
+                    if (file.name.endsWith('.mid') || file.name.endsWith('.midi')) {
+                        const success = await window.engine.learnFromMIDI(file);
+                        if (success) learned++;
+                    }
+                }
+                
+                if (learned > 0) {
+                    document.getElementById('upload-text').textContent = `Learned ${learned}`;
+                    setTimeout(() => {
+                        document.getElementById('upload-text').textContent = 'Upload MIDI';
+                    }, 2000);
+                }
+            });
+            
+            console.log('HOUDINI engine ready!');
+        });
+
